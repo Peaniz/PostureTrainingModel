@@ -11,6 +11,7 @@ This project detects body postures using MediaPipe Pose, OpenCV, and a CNN model
 
 2. Run the project
 - Capture data: `python main.py --mode capture`
+- Preprocess data: `python main.py --mode preprocess`
 - Train model: `python main.py --mode train`
 - Detect posture: `python main.py --mode detect`
 

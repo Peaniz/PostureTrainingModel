@@ -8,6 +8,9 @@ if __name__ == "__main__":
     if args.mode == "capture":
         from scripts.capture_data import main as capture_main
         capture_main()
+    elif args.mode == "preprocess":
+        from scripts.preprocess_data import main as preprocess_main
+        preprocess_main()
     elif args.mode == "train":
         from scripts.train_model import main as train_main
         train_main()
