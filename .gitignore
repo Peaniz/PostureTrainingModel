@@ -54,8 +54,5 @@ Thumbs.db
 *.npy
 *.npz
 
-# CSV files (if you want to exclude data)
-*.csv
-
 # Logs
 *.log
