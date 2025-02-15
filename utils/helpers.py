@@ -19,8 +19,19 @@ def save_to_csv(keypoints: List[float], label: int, filename: str = "data/proces
         label: Class label
         filename: Path to output CSV file
     """
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    
+    # Check if file exists to write header
+    file_exists = os.path.isfile(filename)
+    
     with open(filename, mode="a", newline="") as file:
         writer = csv.writer(file)
+        # Write header if file is new
+        if not file_exists:
+            # Create header with feature names
+            header = [f"feature_{i}" for i in range(len(keypoints))] + ["label"]
+            writer.writerow(header)
         writer.writerow([*keypoints, label])
 
 
@@ -60,8 +71,17 @@ def load_dataset(filename: str = "data/processed/dataset.csv") -> Tuple[np.ndarr
             - X: numpy array of keypoints
             - y: numpy array of encoded labels
     """
+    if not os.path.exists(filename):
+        raise FileNotFoundError(
+            f"Dataset file not found at {filename}\n"
+            "Please follow these steps:\n"
+            "1. Run: python setup.py\n"
+            "2. Run: python main.py --mode capture\n"
+            "3. Collect data for all posture classes"
+        )
+    
     # Read data using pandas
-    df = pd.read_csv(filename, header=None)
+    df = pd.read_csv(filename, header=0)  # Changed to read with header
 
     # Separate features and labels
     X = df.iloc[:, :-1].values  # All columns except the last one

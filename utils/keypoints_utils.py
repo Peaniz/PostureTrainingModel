@@ -64,3 +64,10 @@ def extract_foot_keypoints(image):
         foot_points = np.array([[landmarks[i].x, landmarks[i].y, landmarks[i].z] for i in foot_indices]).flatten()
         return foot_points
     return None
+
+def get_pose_results(image):
+    """
+    Get raw MediaPipe pose results for visualization.
+    """
+    results = pose.process(image)
+    return results

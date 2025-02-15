@@ -55,3 +55,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Project specific
+scripts/data/
+scripts/models/
+
+# Data files
+*.csv
+*.h5
+*.pkl
