@@ -5,23 +5,35 @@ import numpy as np
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
-def draw_landmarks(image, keypoints=None):
+def draw_landmarks(image, results=None):
     """
     Draw pose landmarks on the image.
     
     Args:
         image: Input image
-        keypoints: Numpy array of keypoints or MediaPipe results object
+        results: MediaPipe results object
     """
-    # If keypoints is a numpy array, skip drawing
-    if isinstance(keypoints, np.ndarray):
-        return image
-        
-    # If keypoints is MediaPipe results, draw landmarks
-    if hasattr(keypoints, 'pose_landmarks'):
-        mp_drawing.draw_landmarks(
-            image, 
-            keypoints.pose_landmarks, 
-            mp_pose.POSE_CONNECTIONS
+    annotated_image = image.copy()
+    
+    if results and hasattr(results, 'pose_landmarks'):
+        # Customize drawing style
+        landmark_drawing_spec = mp_drawing.DrawingSpec(
+            color=(0, 255, 0),  # Green color for landmarks
+            thickness=2,
+            circle_radius=2
         )
-    return image
+        connection_drawing_spec = mp_drawing.DrawingSpec(
+            color=(255, 255, 255),  # White color for connections
+            thickness=2
+        )
+        
+        # Draw the pose landmarks
+        mp_drawing.draw_landmarks(
+            annotated_image,
+            results.pose_landmarks,
+            mp_pose.POSE_CONNECTIONS,
+            landmark_drawing_spec,
+            connection_drawing_spec
+        )
+    
+    return annotated_image

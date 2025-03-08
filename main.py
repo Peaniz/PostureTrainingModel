@@ -126,8 +126,12 @@ def main():
             elif buttons["train"].handle_event(event):
                 try:
                     training_report = train_main()
-                    status_message = f"Training completed! Final accuracy: {training_report.split('Final Test Accuracy: ')[1].split('%')[0]}%"
-                    status_color = (0, 255, 0)
+                    if training_report is not None:
+                        status_message = f"Training completed! Final accuracy: {training_report['final_test_acc']:.2f}%"
+                        status_color = (0, 255, 0)
+                    else:
+                        status_message = "Training failed! Check console for details."
+                        status_color = (255, 0, 0)
                 except Exception as e:
                     status_message = f"Error: {str(e)}"
                     status_color = (255, 0, 0)

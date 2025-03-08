@@ -1,15 +1,17 @@
 
-    
+        
 Training Results:
-    ================
-    Final Training Accuracy: 99.83%
-    Final Validation Accuracy: 100.00%
-    Final Test Accuracy: 100.00%
-    
-    Best Validation Accuracy: 100.00%
-    Best Training Accuracy: 99.85%
-    
-    Final Training Loss: 0.0067
-    Final Validation Loss: 0.0000
-    Final Test Loss: 0.0024
-    
+        ================
+        Final Training Accuracy: 99.93%
+        Final Validation Accuracy: 99.77%
+        Final Test Accuracy: 99.77%
+        
+        Best Validation Accuracy: 99.88%
+        Best Training Accuracy: 99.97%
+        
+        Final Training Loss: 0.0056
+        Final Validation Loss: 0.0130
+        Final Test Loss: 0.0111
+        
+        Training Time: 2.52 minutes
+        
