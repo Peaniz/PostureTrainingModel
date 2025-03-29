@@ -5,6 +5,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import pickle
 import time
+from collections import Counter
 
 def clean_dataset(df):
     """Clean and validate the dataset"""
@@ -61,31 +62,41 @@ def fix_csv_file(filepath):
         print(f"Error fixing CSV file: {str(e)}")
         return None
 
-def load_and_filter_data(dataset_type="posture"):
-    """Load and filter data based on dataset type"""
-    print(f"\nLoading {dataset_type} dataset...")
-    
-    # Select appropriate file based on type
-    if dataset_type == "posture":
-        file_path = "data/processed/posture_dataset.csv"
-    else:
-        file_path = "data/processed/leg_dataset.csv"
-    
-    # Load data
-    df = pd.read_csv(file_path, low_memory=False)
-    print(f"Initial shape: {df.shape}")
-    
-    # Separate features and labels
-    X = df.iloc[:, :-1].values  # All columns except last
-    y = df.iloc[:, -1].values   # Last column
-    
-    # Print unique labels and their counts
-    print("\nLabel distribution:")
-    for label in np.unique(y):
-        count = np.sum(y == label)
-        print(f"{label}: {count} samples")
-    
-    return X, y
+def load_and_filter_data(dataset_type):
+    """Load and filter dataset based on type"""
+    try:
+        if dataset_type == "posture":
+            df = pd.read_csv("data/processed/posture_dataset.csv")
+            # Kiểm tra số cột - 36 features (12 keypoints * 3) + 1 label
+            expected_columns = 37
+        elif dataset_type == "leg":
+            df = pd.read_csv("data/processed/leg_dataset.csv")
+            # Kiểm tra số cột - 30 features (10 keypoints * 3) + 1 label
+            expected_columns = 31
+        elif dataset_type == "neck":
+            df = pd.read_csv("data/processed/neck_dataset.csv")
+            # Kiểm tra số cột - 33 features (11 keypoints * 3) + 1 label
+            expected_columns = 34
+        else:
+            raise ValueError(f"Unknown dataset type: {dataset_type}")
+            
+        # Check dataset integrity
+        if df.shape[1] != expected_columns:
+            print(f"Warning: {dataset_type} dataset has {df.shape[1]} columns, expected {expected_columns}")
+        
+        # Get features and labels
+        X = df.iloc[:, :-1].values
+        y = df.iloc[:, -1].values
+        
+        # Print dataset info
+        print(f"\n{dataset_type.capitalize()} dataset loaded: {df.shape[0]} samples")
+        print(f"Labels distribution: {Counter(y)}")
+        
+        return X, y
+        
+    except Exception as e:
+        print(f"Error loading {dataset_type} dataset: {str(e)}")
+        return None, None
 
 def clean_dataset(X, dataset_type="posture"):
     """Clean dataset based on type"""
@@ -159,16 +170,14 @@ def prepare_data():
     print(f"X_test: {X_test_leg.shape}")
 
 def main():
+    """Process all datasets and prepare for training"""
     start_time = time.time()
     
-    # Create necessary directories
-    os.makedirs("data/splits", exist_ok=True)
-    os.makedirs("models", exist_ok=True)
-
-    # Process both datasets
     try:
+        os.makedirs("data/splits", exist_ok=True)
+        
         # Process posture dataset
-        print("\n=== Xử lý dữ liệu tư thế ===")
+        print("=== Xử lý dữ liệu tư thế ===")
         X_posture, y_posture = load_and_filter_data("posture")
         if X_posture is not None:
             X_posture = clean_dataset(X_posture, "posture")
@@ -222,6 +231,34 @@ def main():
             print(f"Số mẫu test: {len(X_test_leg)}")
             print(f"Số features: {X_leg.shape[1]}")
             print(f"Các lớp: {leg_encoder.classes_}")
+            
+        # Process neck dataset
+        print("\n=== Xử lý dữ liệu tư thế cổ ===")
+        X_neck, y_neck = load_and_filter_data("neck")
+        if X_neck is not None:
+            X_neck = clean_dataset(X_neck, "neck")
+            
+            # Create and fit label encoder for neck
+            neck_encoder = LabelEncoder()
+            y_neck_encoded = neck_encoder.fit_transform(y_neck)
+            
+            # Split neck data
+            X_train_neck, X_test_neck, y_train_neck, y_test_neck = train_test_split(
+                X_neck, y_neck_encoded, test_size=0.2, random_state=42, stratify=y_neck_encoded
+            )
+            
+            # Save neck data
+            np.save("data/splits/X_train_neck.npy", X_train_neck)
+            np.save("data/splits/X_test_neck.npy", X_test_neck)
+            np.save("data/splits/y_train_neck.npy", y_train_neck)
+            np.save("data/splits/y_test_neck.npy", y_test_neck)
+            np.save("data/splits/neck_classes.npy", neck_encoder.classes_)
+            
+            print("\nThống kê dữ liệu tư thế cổ:")
+            print(f"Số mẫu train: {len(X_train_neck)}")
+            print(f"Số mẫu test: {len(X_test_neck)}")
+            print(f"Số features: {X_neck.shape[1]}")
+            print(f"Các lớp: {neck_encoder.classes_}")
 
         print(f"\nThời gian xử lý: {time.time() - start_time:.2f} giây")
 
