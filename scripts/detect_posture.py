@@ -13,6 +13,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import datetime
 from collections import defaultdict, deque
 import os
+from scipy.spatial.distance import cosine
 
 def load_models():
     """Load trained models and metadata"""
@@ -255,6 +256,20 @@ def main():
     # Initialize posture tracker
     tracker = PostureTracker(posture_classes, leg_classes, neck_classes)
     
+    # Khởi tạo bộ nhớ cho các keypoints được xác nhận là đúng
+    correct_keypoints = {
+        'leg': [],
+        'posture': [],
+        'neck': []
+    }
+    
+    # Thêm hệ thống tham chiếu
+    reference_system = initialize_reference_system()
+    
+    # Cờ hiệu cho chế độ xác nhận
+    confirmation_mode = False
+    current_confirmation = None
+    
     # Chọn và khởi tạo camera
     cap = choose_camera()
     if cap is None:
@@ -267,20 +282,20 @@ def main():
     if isinstance(cap, cv2.VideoCapture) and cap.isOpened():
         properties = [cap.get(prop) for prop in [cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT, cv2.CAP_PROP_FPS]]
         # Kiểm tra xem có phải camera WiFi không dựa trên các thuộc tính
-        # Camera WiFi thường có kích thước khác với camera mặc định
         if properties[0] != 1280 or properties[1] != 720:
             is_wifi_camera = True
             print("Da phat hien camera WiFi - Dieu chinh kich thuoc chu.")
-            # Lưu lại URL cho việc kết nối lại
             try:
                 camera_url = cap.get(cv2.CAP_PROP_POS_MSEC)
             except:
-                camera_url = "http://192.168.1.21/video"  # URL mặc định nếu không lấy được
+                camera_url = "http://192.168.1.21/video"  # URL mặc định
     
     print("\nDa khoi tao camera va model thanh cong.")
     print("Nhan 'q' de thoat chuong trinh.")
     print("Nhan 'v' de xem tong quan (overview).")
     print("Nhan 's' de luu thong ke va bieu do.")
+    print("Nhan 'c' de xac nhan tu the hien tai la DUNG.")
+    print("Nhan 'r' de su dung cac keypoints da xac nhan de cap nhat model.")
     
     # Biến đếm frame và thời gian để tính FPS
     frame_count = 0
@@ -294,6 +309,11 @@ def main():
     # Flag to show visualization
     show_visualization = False
     current_viz = None
+    
+    # Lưu keypoints hiện tại
+    current_leg_keypoints = None
+    current_neck_keypoints = None
+    current_posture_keypoints = None
     
     while cap.isOpened():
         success, frame = cap.read()
@@ -331,6 +351,11 @@ def main():
                 # Extract and preprocess keypoints
                 leg_keypoints, neck_keypoints, posture_keypoints = extract_and_preprocess_keypoints(results)
                 
+                # Lưu lại keypoints hiện tại
+                current_leg_keypoints = leg_keypoints.copy()
+                current_neck_keypoints = neck_keypoints.copy()
+                current_posture_keypoints = posture_keypoints.copy()
+                
                 # Normalize keypoints using appropriate scalers
                 leg_keypoints_normalized = scaler_leg.transform(leg_keypoints)
                 neck_keypoints_normalized = scaler_neck.transform(neck_keypoints)
@@ -341,12 +366,31 @@ def main():
                 neck_pred = neck_model.predict(neck_keypoints_normalized, verbose=0)
                 posture_pred = posture_model.predict(posture_keypoints_normalized, verbose=0)
                 
+                # Điều chỉnh dự đoán dựa trên tham chiếu
+                if reference_system['leg']['reference'] is not None:
+                    similarity = calculate_similarity(leg_keypoints[0], reference_system['leg']['reference'])
+                    leg_pred = adjust_prediction(leg_pred, similarity, reference_system['leg']['threshold'])
+                
+                if reference_system['neck']['reference'] is not None:
+                    similarity = calculate_similarity(neck_keypoints[0], reference_system['neck']['reference'])
+                    neck_pred = adjust_prediction(neck_pred, similarity, reference_system['neck']['threshold'])
+                    
+                if reference_system['posture']['reference'] is not None:
+                    similarity = calculate_similarity(posture_keypoints[0], reference_system['posture']['reference'])
+                    posture_pred = adjust_prediction(posture_pred, similarity, reference_system['posture']['threshold'])
+                
                 # Update posture tracker
                 tracker.update(leg_pred, neck_pred, posture_pred)
                 
                 # Draw results with appropriate font size based on camera type
                 frame = draw_results(frame, leg_pred, neck_pred, posture_pred, 
                                    leg_classes, neck_classes, posture_classes, is_wifi_camera)
+                
+                # Nếu đang trong chế độ xác nhận, hiển thị thông báo
+                if confirmation_mode:
+                    confirm_text = f"Xác nhận: {current_confirmation} đúng? (Y/N)"
+                    cv2.putText(frame, confirm_text, (10, frame.shape[0] - 50),
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
             
             # Hiển thị FPS - cũng điều chỉnh kích thước font
             fps_font_scale = 0.30 if is_wifi_camera else 0.35
@@ -359,10 +403,24 @@ def main():
                 cv2.putText(frame, posture_text, (frame.shape[1] - 300, frame.shape[0] - 10),
                            cv2.FONT_HERSHEY_SIMPLEX, fps_font_scale, (0, 255, 0), 1)
             
+            # Hiển thị số lượng keypoints đã xác nhận
+            confirmed_text = f"Confirmed: Leg({len(correct_keypoints['leg'])}), Posture({len(correct_keypoints['posture'])}), Neck({len(correct_keypoints['neck'])})"
+            cv2.putText(frame, confirmed_text, (10, frame.shape[0] - 30),
+                      cv2.FONT_HERSHEY_SIMPLEX, fps_font_scale, (255, 255, 0), 1)
+            
             # Add help text at the bottom
-            help_text = "Press 'v' for visualization, 's' to save stats"
+            help_text = "c: confirm, r: retrain, v: viz, s: save stats"
             cv2.putText(frame, help_text, (frame.shape[1] // 2 - 150, frame.shape[0] - 10),
                        cv2.FONT_HERSHEY_SIMPLEX, fps_font_scale, (255, 255, 255), 1)
+            
+            # Thêm hiển thị thông tin tham chiếu
+            if any(reference_system[part]['reference'] is not None for part in ['leg', 'posture', 'neck']):
+                ref_text = "References: "
+                ref_text += "Leg " if reference_system['leg']['reference'] is not None else ""
+                ref_text += "Posture " if reference_system['posture']['reference'] is not None else ""
+                ref_text += "Neck" if reference_system['neck']['reference'] is not None else ""
+                cv2.putText(frame, ref_text, (10, frame.shape[0] - 70),
+                          cv2.FONT_HERSHEY_SIMPLEX, fps_font_scale, (255, 255, 0), 1)
             
             # Display the resulting frame
             cv2.imshow('Posture Detection', frame)
@@ -404,27 +462,83 @@ def main():
                 print("Resuming posture detection")
         # Save visualizations and statistics on 's' key press
         elif key == ord('s'):
-            # Create reports directory if it doesn't exist
             os.makedirs("reports", exist_ok=True)
-            
-            # Save visualizations
             dashboard_path = tracker.save_visualization()
-            
             print(f"Statistics and visualizations saved to 'reports' directory")
             
-            # Show a confirmation on the frame
             if not show_visualization:
-                # Create a copy of the frame to avoid modifying the original
                 save_frame = frame.copy()
-                
-                # Add text overlay
                 save_text = "Statistics and visualizations saved!"
                 cv2.putText(save_frame, save_text, (frame.shape[1]//2 - 200, frame.shape[0]//2),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                
-                # Display the confirmation frame
                 cv2.imshow('Posture Detection', save_frame)
                 cv2.waitKey(1000)  # Show for 1 second
+        
+        # Enter confirmation mode on 'c' key press
+        elif key == ord('c'):
+            if results.pose_landmarks and not confirmation_mode:
+                confirmation_mode = True
+                current_confirmation = "leg"
+                print("Entering confirmation mode. Confirm if leg position is correct (Y/N)")
+            elif confirmation_mode:
+                print("Already in confirmation mode. Please complete current confirmation.")
+        
+        # Handle Y/N responses in confirmation mode
+        elif key == ord('y') and confirmation_mode:
+            print(f"Confirmed: {current_confirmation} position is correct")
+            
+            # Save the confirmed keypoints to reference system
+            if current_confirmation == "leg" and current_leg_keypoints is not None:
+                reference_system['leg']['keypoints'].append(current_leg_keypoints[0])
+                reference_system['leg']['reference'] = calculate_reference(reference_system['leg']['keypoints'])
+                current_confirmation = "posture"
+                print("Now confirm if posture is correct (Y/N)")
+            elif current_confirmation == "posture" and current_posture_keypoints is not None:
+                reference_system['posture']['keypoints'].append(current_posture_keypoints[0])
+                reference_system['posture']['reference'] = calculate_reference(reference_system['posture']['keypoints'])
+                current_confirmation = "neck"
+                print("Now confirm if neck position is correct (Y/N)")
+            elif current_confirmation == "neck" and current_neck_keypoints is not None:
+                reference_system['neck']['keypoints'].append(current_neck_keypoints[0])
+                reference_system['neck']['reference'] = calculate_reference(reference_system['neck']['keypoints'])
+                confirmation_mode = False
+                current_confirmation = None
+                print("All positions confirmed and reference points updated.")
+                
+                # Hiển thị thông báo hoàn thành
+                confirm_frame = frame.copy()
+                confirm_text = "Reference points updated!"
+                cv2.putText(confirm_frame, confirm_text, (frame.shape[1]//2 - 200, frame.shape[0]//2),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                cv2.imshow('Posture Detection', confirm_frame)
+                cv2.waitKey(1000)
+        
+        elif key == ord('n') and confirmation_mode:
+            print(f"Not confirmed: {current_confirmation} position is incorrect")
+            
+            if current_confirmation == "leg":
+                current_confirmation = "posture"
+                print("Now confirm if posture is correct (Y/N)")
+            elif current_confirmation == "posture":
+                current_confirmation = "neck"
+                print("Now confirm if neck position is correct (Y/N)")
+            elif current_confirmation == "neck":
+                confirmation_mode = False
+                current_confirmation = None
+                print("Confirmation completed.")
+        
+        # Thêm phím 'r' để reset hệ thống tham chiếu
+        elif key == ord('r'):
+            reference_system = initialize_reference_system()
+            print("Reference system reset.")
+            
+            # Hiển thị thông báo
+            reset_frame = frame.copy()
+            reset_text = "Reference system reset!"
+            cv2.putText(reset_frame, reset_text, (frame.shape[1]//2 - 200, frame.shape[0]//2),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            cv2.imshow('Posture Detection', reset_frame)
+            cv2.waitKey(1000)
     
     # Save final statistics on exit
     if tracker.total_tracked_time > 10:  # Only save if we've tracked for more than 10 seconds
@@ -434,6 +548,37 @@ def main():
     # Release the webcam and close windows
     cap.release()
     cv2.destroyAllWindows()
+
+def retrain_model(model, new_keypoints, new_labels, scaler):
+    """Cập nhật mô hình với dữ liệu mới"""
+    # Chuyển đổi dữ liệu mới thành numpy arrays
+    X_new = np.array(new_keypoints)
+    y_new = np.array(new_labels)
+    
+    # Chuẩn hóa dữ liệu mới
+    X_new_scaled = scaler.transform(X_new)
+    
+    # Chuyển đổi sang định dạng one-hot nếu cần
+    if len(model.layers[-1].output_shape) > 1 and model.layers[-1].output_shape[1] > 1:
+        num_classes = model.layers[-1].output_shape[1]
+        y_new_oh = tf.keras.utils.to_categorical(y_new, num_classes=num_classes)
+    else:
+        y_new_oh = y_new
+    
+    # Fine-tune mô hình với dữ liệu mới
+    # Sử dụng learning rate thấp để tránh phá hủy kiến thức cũ
+    initial_weights = model.get_weights()
+    
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
+    
+    # Fine-tune mô hình trong một số epoch nhỏ
+    model.fit(X_new_scaled, y_new_oh, epochs=5, batch_size=max(1, len(X_new)//10), verbose=0)
+    
+    # Lưu mô hình mới
+    # model.save('path_to_model.h5')  # Uncomment nếu muốn lưu mô hình mới
+    
+    return model
 
 class PostureTracker:
     """Track posture data over time for visualization"""
@@ -913,4 +1058,60 @@ class PostureTracker:
                 f.write(f"  {position}: {time_val:.1f} seconds\n")
         
         print(f"Visualizations and statistics saved to {output_dir}/")
-        return f"{output_dir}/dashboard_{timestamp}.png" 
+        return f"{output_dir}/dashboard_{timestamp}.png"
+
+def initialize_reference_system():
+    """Khởi tạo hệ thống tham chiếu keypoints"""
+    return {
+        'leg': {'keypoints': [], 'reference': None, 'threshold': 0.15},
+        'posture': {'keypoints': [], 'reference': None, 'threshold': 0.20},
+        'neck': {'keypoints': [], 'reference': None, 'threshold': 0.15}
+    }
+
+def calculate_reference(keypoints_list):
+    """Tính toán keypoint tham chiếu từ danh sách các keypoints đã xác nhận"""
+    if not keypoints_list:
+        return None
+    
+    # Chuyển đổi list thành array và tính trung bình
+    keypoints_array = np.array(keypoints_list)
+    reference = np.mean(keypoints_array, axis=0)
+    return reference
+
+def calculate_similarity(keypoints, reference):
+    """Tính độ tương đồng giữa keypoints hiện tại và tham chiếu"""
+    if reference is None:
+        return 0.0
+    
+    # Sử dụng cosine similarity (1 - cosine distance)
+    similarity = 1 - cosine(keypoints, reference)
+    return similarity
+
+def adjust_prediction(original_pred, similarity, threshold):
+    """Điều chỉnh dự đoán dựa trên độ tương đồng với tham chiếu"""
+    # Nếu độ tương đồng vượt ngưỡng, ưu tiên điểm tham chiếu
+    if similarity > threshold:
+        # Mức độ tin cậy tỉ lệ với độ tương đồng
+        confidence = min(0.95, (similarity - threshold) / (1 - threshold) * 0.7 + 0.25)
+        
+        # Đối với model nhị phân (leg, neck)
+        if len(original_pred[0]) == 1:
+            # Đây là model nhị phân, điều chỉnh để ưu tiên tư thế đúng (class 0)
+            adjusted_pred = np.array([[1 - confidence]])
+        else:
+            # Đối với model đa lớp (posture), tạo distribution mới
+            adjusted_pred = np.zeros_like(original_pred)
+            # Đặt lớp "good_posture" (thường là lớp 0) có xác suất cao hơn
+            adjusted_pred[0][0] = confidence
+            # Phân bố phần còn lại cho các lớp khác
+            remaining = 1 - confidence
+            for i in range(1, len(adjusted_pred[0])):
+                adjusted_pred[0][i] = remaining / (len(adjusted_pred[0]) - 1)
+        
+        # Trộn dự đoán gốc và điều chỉnh
+        blend_factor = min(1.0, similarity * 2)  # Mức độ ưu tiên tham chiếu
+        final_pred = original_pred * (1 - blend_factor) + adjusted_pred * blend_factor
+        return final_pred
+    
+    # Nếu không, giữ nguyên dự đoán gốc
+    return original_pred 
