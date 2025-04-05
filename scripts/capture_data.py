@@ -299,27 +299,70 @@ def choose_camera():
         
         # Thử các đường dẫn phổ biến nếu kết nối thất bại
         cap = cv2.VideoCapture(url)
+        
+        # Đặt tham số camera WiFi để cải thiện chất lượng
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # Thử 1920x1080 trước
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+        cap.set(cv2.CAP_PROP_BRIGHTNESS, 150)  # Tăng độ sáng
+        cap.set(cv2.CAP_PROP_CONTRAST, 150)    # Tăng độ tương phản
+        cap.set(cv2.CAP_PROP_SATURATION, 150)  # Tăng độ bão hòa màu
+        
         if not cap.isOpened():
-            urls_to_try = [
-                f"{url.split('/')[0]}//{url.split('/')[2]}/video",
-                f"{url.split('/')[0]}//{url.split('/')[2]}/stream",
-                f"{url.split('/')[0]}//{url.split('/')[2]}:81/stream",
-                f"{url.split('/')[0]}//{url.split('/')[2]}/mjpeg"
-            ]
+            # Nếu 1920x1080 không được, thử 1280x720
+            cap = cv2.VideoCapture(url)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            cap.set(cv2.CAP_PROP_BRIGHTNESS, 150)
+            cap.set(cv2.CAP_PROP_CONTRAST, 150)
+            cap.set(cv2.CAP_PROP_SATURATION, 150)
             
-            for try_url in urls_to_try:
-                print(f"Thử kết nối với: {try_url}")
-                cap = cv2.VideoCapture(try_url)
-                if cap.isOpened():
-                    url = try_url
-                    print(f"Đã kết nối thành công với: {url}")
-                    break
+            if not cap.isOpened():
+                urls_to_try = [
+                    f"{url.split('/')[0]}//{url.split('/')[2]}/video",
+                    f"{url.split('/')[0]}//{url.split('/')[2]}/stream",
+                    f"{url.split('/')[0]}//{url.split('/')[2]}:81/stream",
+                    f"{url.split('/')[0]}//{url.split('/')[2]}/mjpeg"
+                ]
+                
+                for try_url in urls_to_try:
+                    print(f"Thử kết nối với: {try_url}")
+                    cap = cv2.VideoCapture(try_url)
+                    if cap.isOpened():
+                        # Đặt tham số cho mỗi lần kết nối thành công
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                        cap.set(cv2.CAP_PROP_FPS, 30)
+                        cap.set(cv2.CAP_PROP_BRIGHTNESS, 150)
+                        cap.set(cv2.CAP_PROP_CONTRAST, 150)
+                        cap.set(cv2.CAP_PROP_SATURATION, 150)
+                        
+                        # Kiểm tra xem độ phân giải có được đặt thành công không
+                        actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                        actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                        
+                        if actual_width < 1280 or actual_height < 720:
+                            # Nếu độ phân giải quá thấp, thử 1280x720
+                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                        
+                        url = try_url
+                        print(f"Đã kết nối thành công với: {url}")
+                        print(f"Độ phân giải camera: {actual_width}x{actual_height}")
+                        break
         
         if not cap.isOpened():
             print("Không thể kết nối với camera WiFi. Chuyển sang camera mặc định.")
             cap = cv2.VideoCapture(0)
         else:
+            # In thông tin camera thực tế
+            actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+            actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            actual_fps = cap.get(cv2.CAP_PROP_FPS)
             print(f"Đã kết nối với camera WiFi: {url}")
+            print(f"Độ phân giải camera: {actual_width}x{actual_height}")
+            print(f"FPS: {actual_fps}")
     
     # Kiểm tra kết nối camera
     if not cap.isOpened():
